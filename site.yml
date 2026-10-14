@@ -1,0 +1,76 @@
+---
+- name: Configure FoodApp web server
+  hosts: webservers
+  become: true
+  vars:
+    app_name: foodapp
+    app_port: 8090
+    web_root: /var/www/foodapp
+
+  tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: packages
+
+    - name: Create web root directory
+      file:
+        path: "{{ web_root }}"
+        state: directory
+        mode: "0755"
+      tags: app
+
+    - name: Deploy application page from template
+      template:
+        src: index.html.j2
+        dest: "{{ web_root }}/index.html"
+        mode: "0644"
+      tags: app
+
+    - name: Deploy Nginx site configuration
+      template:
+        src: nginx.conf.j2
+        dest: "/etc/nginx/sites-available/{{ app_name }}"
+        mode: "0644"
+      notify: Reload nginx
+      tags: config
+
+    - name: Enable FoodApp site
+      file:
+        src: "/etc/nginx/sites-available/{{ app_name }}"
+        dest: "/etc/nginx/sites-enabled/{{ app_name }}"
+        state: link
+      notify: Reload nginx
+      tags: config
+
+    - name: Disable default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+      tags: config
+
+    - name: Ensure Nginx is running and enabled at boot
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+      tags: service
+
+    - name: Apply pending handlers now
+      meta: flush_handlers
+
+    - name: Verify the application responds
+      uri:
+        url: "http://localhost:{{ app_port }}"
+        status_code: 200
+      tags: verify
+
+  handlers:
+    - name: Reload nginx
+      service:
+        name: nginx
+        state: reloaded
